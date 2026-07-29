@@ -1,14 +1,116 @@
 #!/usr/bin/env bash
+#
+# pdflogo - stamp a logo onto one or more PDF files in place
+
+set -u
+
+PROG=$(basename "$0")
+VERSION="1.0.0"
+
+logo="${PDFLOGO_LOGO:-$HOME/.config/logos/mandarine-logo-small.pdf}"
+position="topright"
+offset=10
+verbose=0
+
+usage() {
+    cat <<EOF
+Usage: $PROG [OPTION]... FILE...
+Stamp a logo onto each FILE in place, overwriting it on success.
+
+  -l, --logo FILE      logo PDF to stamp (default: \$PDFLOGO_LOGO or ~/.config/logos/mandarine-logo-small.pdf)
+  -p, --position POS   cpdf stamp position (default: topright)
+  -o, --offset N       stamp offset in points (default: 10)
+  -v, --verbose        print each file as it is processed
+  -h, --help           display this help and exit
+  -V, --version        output version information and exit
+
+Exit status is 0 if all files were stamped, 1 if any failed.
+EOF
+}
+
+die() {
+    printf '%s: %s\n' "$PROG" "$1" >&2
+    exit 1
+}
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -l|--logo)
+            [ $# -ge 2 ] || die "option '$1' requires an argument"
+            logo=$2
+            shift 2
+            ;;
+        --logo=*)
+            logo=${1#*=}
+            shift
+            ;;
+        -p|--position)
+            [ $# -ge 2 ] || die "option '$1' requires an argument"
+            position=$2
+            shift 2
+            ;;
+        --position=*)
+            position=${1#*=}
+            shift
+            ;;
+        -o|--offset)
+            [ $# -ge 2 ] || die "option '$1' requires an argument"
+            offset=$2
+            shift 2
+            ;;
+        --offset=*)
+            offset=${1#*=}
+            shift
+            ;;
+        -v|--verbose)
+            verbose=1
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        -V|--version)
+            printf '%s %s\n' "$PROG" "$VERSION"
+            exit 0
+            ;;
+        --)
+            shift
+            break
+            ;;
+        -?*)
+            die "unrecognized option '$1' (try --help)"
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+[ $# -ge 1 ] || die "missing file operand (try --help)"
+
+command -v cpdf >/dev/null 2>&1 || die "cpdf: command not found"
+[ -r "$logo" ] || die "logo file not found or not readable: $logo"
+
+status=0
 
 for file in "$@"; do
-    printf "$file\n"
-    tmp=$(mktemp "$(dirname "$file")/.pdflogo.XXXXXX")
-    if cpdf -stamp-on ~/.config/logos/mandarine-logo-small.pdf -topright 10 "$file" all -o "$tmp"; then
+    if [ ! -r "$file" ]; then
+        printf '%s: %s: No such file or not readable\n' "$PROG" "$file" >&2
+        status=1
+        continue
+    fi
+
+    [ "$verbose" -eq 1 ] && printf '%s\n' "$file"
+
+    tmp=$(mktemp "$(dirname "$file")/.pdflogo.XXXXXX") || die "failed to create temp file"
+    if cpdf -stamp-on "$logo" "-$position" "$offset" "$file" all -o "$tmp"; then
         mv "$tmp" "$file"
     else
         rm -f "$tmp"
-        echo "Error: pdflogo failed on '$file'" >&2
+        printf '%s: failed on %s\n' "$PROG" "$file" >&2
+        status=1
     fi
 done
 
-# stamp pdf with mandarine logo
+exit "$status"
